@@ -99,6 +99,15 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
             wrapper.automaticallyWaitsToMinimizeStalling = wrapper.bufferDuration == 0
         }
     }
+    
+    /**
+     The maximum amount of seconds to be buffered by the player. The default value is 20 seconds.
+     AVPlayerWrapper will not request more stream data if the audio data in its buffer is longer than this duration.
+     */
+    public var maxBufferDuration: TimeInterval {
+        get { wrapper.maxBufferDuration }
+        set { wrapper.maxBufferDuration = newValue }
+    }
 
     /**
      Indicates whether the player should automatically delay playback in order to minimize stalling. Setting this to true will also set `bufferDuration` back to `0`.
