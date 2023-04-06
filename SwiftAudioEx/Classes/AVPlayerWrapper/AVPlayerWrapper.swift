@@ -255,6 +255,7 @@ class AVPlayerWrapper: NSObject, AVPlayerWrapperProtocol {
             url.scheme = "https-partial"
 
             let pendingAsset = AVURLAsset(url: url.url!, options: urlOptions)
+            pendingAsset.resourceLoader.setDelegate(self, queue: self.loadingQueue)
             asset = pendingAsset
             state = .loading
             pendingAsset.loadValuesAsynchronously(forKeys: keys, completionHandler: { [weak self] in
