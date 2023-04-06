@@ -25,11 +25,6 @@ public enum StreamResponseError: Error {
 }
 
 class AVPlayerWrapper: NSObject, AVPlayerWrapperProtocol {
-    struct Constants {
-        // taken from BIT_RATE constant  https://github.com/readwiseio/rekindled/blob/a42c661869905504618b423fc472b3f4b829a720/reader/integrations/azure_v2.py#L24
-        static let streamBitrate = 48_000
-    }
-    
     // MARK: - Properties
     
     fileprivate var avPlayer = AVPlayer()
@@ -536,8 +531,12 @@ extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
         if loadingRequest.contentInformationRequest == nil, let dataRequest = loadingRequest.dataRequest {
             let start = dataRequest.requestedOffset
             var end = start + Int64(dataRequest.requestedLength)
-            let maxLength = Int64(self.maxBufferDuration * Double(Constants.streamBitrate / 8))
-            let maxEnd = Int64(self.currentTime * Double(Constants.streamBitrate / 8)) + maxLength
+            var bitrate = currentItem?.accessLog()?.events.last?.indicatedBitrate ?? -1
+            if bitrate == -1 {
+                bitrate = 48_000
+            }
+            let maxLength = Int64(self.maxBufferDuration * bitrate / 8)
+            let maxEnd = Int64(self.currentTime * bitrate / 8) + maxLength
             if end > maxEnd {
                 end = maxEnd
             }
