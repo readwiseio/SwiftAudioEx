@@ -245,7 +245,7 @@ class AVPlayerWrapper: NSObject, AVPlayerWrapperProtocol {
         if let url = url {
             let keys = ["playable"]
             // Modify the URL scheme to trigger a call to our delegate method resourceLoader(shouldWaitForLoadingOfRequestedResource:)
-            // That way we can intercept the request and ensure only small parts of the stream are loaded at a time, saving Azure API costs
+            // That way we can intercept the request and ensure only small parts of the stream are loaded at a time
             var url = URLComponents(url: url, resolvingAgainstBaseURL: false)!
             url.scheme = "https-partial"
 

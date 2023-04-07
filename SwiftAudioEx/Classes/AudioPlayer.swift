@@ -101,8 +101,7 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
     }
     
     /**
-     The maximum amount of seconds to be buffered by the player. The default value is 20 seconds.
-     AVPlayerWrapper will not request more stream data if the audio data in its buffer is longer than this duration.
+     The maximum amount of seconds of stream data to be requested from the server at any given time. The default value is 20 seconds.
      */
     public var maxBufferDuration: TimeInterval {
         get { wrapper.maxBufferDuration }
