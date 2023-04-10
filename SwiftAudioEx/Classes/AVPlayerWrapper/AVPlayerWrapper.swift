@@ -247,7 +247,7 @@ class AVPlayerWrapper: NSObject, AVPlayerWrapperProtocol {
             // Modify the URL scheme to trigger a call to our delegate method resourceLoader(shouldWaitForLoadingOfRequestedResource:)
             // That way we can intercept the request and ensure only small parts of the stream are loaded at a time
             var url = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            url.scheme = "https-partial"
+            url.scheme = "https-limited" // This isn't a real URL scheme, it gets reset to "https" in the delegate method
 
             let pendingAsset = AVURLAsset(url: url.url!, options: urlOptions)
             pendingAsset.resourceLoader.setDelegate(self, queue: self.loadingQueue)
@@ -531,18 +531,18 @@ extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
         if loadingRequest.contentInformationRequest == nil, let dataRequest = loadingRequest.dataRequest {
             let start = dataRequest.requestedOffset
             var end = start + Int64(dataRequest.requestedLength)
-            var bitrate = currentItem?.accessLog()?.events.last?.indicatedBitrate ?? -1
+            var bitrate = self.currentItem?.accessLog()?.events.last?.indicatedBitrate ?? -1
             if bitrate == -1 {
                 bitrate = 48_000
             }
-            let maxLength = Int64(self.maxBufferDuration * bitrate / 8)
-            let maxEnd = Int64(self.currentTime * bitrate / 8) + maxLength
+            let forwardBufferLength = Int64(self.maxBufferDuration * bitrate / 8)
+            let maxEnd = Int64(self.currentTime * bitrate / 8) + forwardBufferLength
             if end > maxEnd {
                 end = maxEnd
             }
             let length = end - start
             // block petty requests lest we overload the server
-            if length < maxLength / 4 {
+            if length < forwardBufferLength / 4 {
                 // delay the next request by at least a second
                 self.loadingQueue.asyncAfter(deadline: .now() + 1.0, execute: {
                     loadingRequest.finishLoading()
