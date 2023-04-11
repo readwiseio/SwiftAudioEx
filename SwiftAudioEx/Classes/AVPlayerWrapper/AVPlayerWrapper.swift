@@ -530,7 +530,7 @@ extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
         // Test whether this is a real request for stream data
         if loadingRequest.contentInformationRequest == nil, let dataRequest = loadingRequest.dataRequest {
             let start = dataRequest.requestedOffset
-            var end = start + Int64(dataRequest.requestedLength)
+            var end = start + Int64(dataRequest.requestedLength) - 1 // Range header byte range is inclusive of end
             var bitrate = self.currentItem?.accessLog()?.events.last?.indicatedBitrate ?? -1
             if bitrate == -1 {
                 bitrate = 48_000
