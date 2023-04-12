@@ -540,10 +540,9 @@ extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
             if end > maxEnd {
                 end = maxEnd
             }
-            let length = end - start
-            // block petty requests lest we overload the server
-            if length < forwardBufferLength / 4 {
-                // delay the next request by at least a second
+            if end <= start {
+                // We're requesting zero bytes, so we are probably paused
+                print("resourceLoader: Skipping request for zero bytes")
                 self.loadingQueue.asyncAfter(deadline: .now() + 1.0, execute: {
                     loadingRequest.finishLoading()
                 })
@@ -552,6 +551,7 @@ extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
             // Overwrite Range header with custom header
             let newRangeHeader = "bytes=\(start)-\(end)"
             request.setValue(newRangeHeader, forHTTPHeaderField: "Range")
+            print("resourceLoader: Requesting data from \(request), rewrote Range: \(request.allHTTPHeaderFields!["Range"]!)")
         }
         // Fire the modified request
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -576,11 +576,17 @@ extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
                     contentInfo.contentLength = contentLength
                     contentInfo.contentType = "public.mp3"
                     contentInfo.isByteRangeAccessSupported = true
+                    print("resourceLoader: Filling contentInfo, contentLength=\(contentLength) bytes")
+                    loadingRequest.finishLoading()
                 } else if let dataRequest = loadingRequest.dataRequest {
                     // This was a real request for stream data, so just pipe the data through
+                    print("resourceLoader: Received \(data!.count) bytes of audio data")
                     dataRequest.respond(with: data!)
+                    // Delay the next request by a second to not overload the server
+                    self.loadingQueue.asyncAfter(deadline: .now() + 1.0, execute: {
+                        loadingRequest.finishLoading()
+                    })
                 }
-                loadingRequest.finishLoading()
             }
         }
         task.resume()
