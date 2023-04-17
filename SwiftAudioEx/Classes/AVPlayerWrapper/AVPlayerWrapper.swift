@@ -244,14 +244,7 @@ class AVPlayerWrapper: NSObject, AVPlayerWrapperProtocol {
         }
         if let url = url {
             let keys = ["playable"]
-            // Modify the URL scheme to trigger a call to our delegate method resourceLoader(shouldWaitForLoadingOfRequestedResource:)
-            // That way we can intercept the request and ensure only small parts of the stream are loaded at a time
-            var url = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            if url.query?.contains("limitBuffer=true") == true {
-                url.scheme = "https-limit-buffer" // This isn't a real URL scheme, it gets reset to "https" in the delegate method
-            }
-
-            let pendingAsset = AVURLAsset(url: url.url!, options: urlOptions)
+            let pendingAsset = AVURLAsset(url: url, options: urlOptions)
             pendingAsset.resourceLoader.setDelegate(self, queue: self.loadingQueue)
             asset = pendingAsset
             state = .loading
