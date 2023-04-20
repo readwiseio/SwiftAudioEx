@@ -32,6 +32,8 @@ protocol AVPlayerWrapperProtocol: AnyObject {
     
     var bufferDuration: TimeInterval { get set }
     
+    var maxBufferDuration: TimeInterval { get set }
+
     var timeEventFrequency: TimeEventFrequency { get set }
     
     var volume: Float { get set }
