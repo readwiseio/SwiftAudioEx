@@ -18,7 +18,12 @@ public enum PlaybackEndedReason: String {
     case jumpedToIndex
 }
 
-class AVPlayerWrapper: AVPlayerWrapperProtocol {
+public enum StreamResponseError: Error {
+    case invalidContentLength
+}
+
+
+class AVPlayerWrapper: NSObject, AVPlayerWrapperProtocol {
     
     struct Constants {
         static let assetPlayableKey = "playable"
@@ -37,10 +42,14 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
     /// True when the track was paused for the purpose of switching tracks
     fileprivate var pausedForLoad: Bool = false
+
+    fileprivate let loadingQueue = DispatchQueue(label: "io.readwise.readermobile.loadingQueue")
     
-    public init() {
+    override public init() {
         playerTimeObserver = AVPlayerTimeObserver(periodicObserverTimeInterval: timeEventFrequency.getTime())
         playerTimeObserver.player = avPlayer
+
+        super.init()
 
         playerObserver.player = avPlayer
         playerObserver.delegate = self
@@ -133,6 +142,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     
     var bufferDuration: TimeInterval = 0
 
+    var maxBufferDuration: TimeInterval = 20
+
     var timeEventFrequency: TimeEventFrequency = .everySecond {
         didSet {
             playerTimeObserver.periodicObserverTimeInterval = timeEventFrequency.getTime()
@@ -207,7 +218,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             recreateAVPlayer()
         }
 
-        pendingAsset = AVURLAsset(url: url, options: options)
+        let urlAsset = AVURLAsset(url: url, options: options)
+        urlAsset.resourceLoader.setDelegate(self, queue: self.loadingQueue)
+        pendingAsset = urlAsset
         
         if let pendingAsset = pendingAsset {
             state = .loading
@@ -368,4 +381,79 @@ extension AVPlayerWrapper: AVPlayerItemObserverDelegate {
         delegate?.AVWrapper(didReceiveMetadata: metadata)
     }
     
+}
+
+extension AVPlayerWrapper: AVAssetResourceLoaderDelegate {
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        // Revert custom URL scheme used to trigger this delegate call
+        var components = URLComponents(url: loadingRequest.request.url!, resolvingAgainstBaseURL: false)!
+        components.scheme = "https"
+        var request = URLRequest(url: components.url!)
+        // Copy all headers, including authentication header
+        request.allHTTPHeaderFields = loadingRequest.request.allHTTPHeaderFields
+        // Test whether this is a real request for stream data
+        if loadingRequest.contentInformationRequest == nil, let dataRequest = loadingRequest.dataRequest {
+            let start = dataRequest.requestedOffset
+            var end = start + Int64(dataRequest.requestedLength) - 1 // Range header byte range is inclusive of end
+            var bitrate = self.currentItem?.accessLog()?.events.last?.indicatedBitrate ?? -1
+            if bitrate == -1 {
+                bitrate = 48_000
+            }
+            let forwardBufferLength = Int64(self.maxBufferDuration * bitrate / 8)
+            let maxEnd = Int64(self.currentTime * bitrate / 8) + forwardBufferLength
+            if end > maxEnd {
+                end = maxEnd
+            }
+            if end <= start {
+                // We're requesting zero bytes, so we are probably paused
+                print("resourceLoader: Skipping request for zero bytes")
+                self.loadingQueue.asyncAfter(deadline: .now() + 1.0, execute: {
+                    loadingRequest.finishLoading()
+                })
+                return true
+            }
+            // Overwrite Range header with custom header
+            let newRangeHeader = "bytes=\(start)-\(end)"
+            request.setValue(newRangeHeader, forHTTPHeaderField: "Range")
+            print("resourceLoader: Requesting data from \(request), rewrote Range: \(request.allHTTPHeaderFields!["Range"]!)")
+        }
+        // Fire the modified request
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            self.loadingQueue.async {
+                if error != nil {
+                    loadingRequest.finishLoading(with: error)
+                    return
+                }
+                let response = response! as! HTTPURLResponse
+                if let contentInfo = loadingRequest.contentInformationRequest {
+                    // Fill contentInfo with stream metadata, most notably the length of the entire stream
+                    let contentRange = response.allHeaderFields["content-range"] as? String
+                    // Content-Range looks like "bytes=0-1000/2000" where "2000" is the total stream length in bytes
+                    guard let contentLengthString = contentRange?.split(separator: "/")[1] else {
+                        loadingRequest.finishLoading(with: StreamResponseError.invalidContentLength)
+                        return
+                    }
+                    guard let contentLength = Int64(contentLengthString) else {
+                        loadingRequest.finishLoading(with: StreamResponseError.invalidContentLength)
+                        return
+                    }
+                    contentInfo.contentLength = contentLength
+                    contentInfo.contentType = "public.mp3"
+                    contentInfo.isByteRangeAccessSupported = true
+                    print("resourceLoader: Filling contentInfo, contentLength=\(contentLength) bytes")
+                    loadingRequest.finishLoading()
+                } else if let dataRequest = loadingRequest.dataRequest {
+                    // This was a real request for stream data, so just pipe the data through
+                    print("resourceLoader: Received \(data!.count) bytes of audio data")
+                    dataRequest.respond(with: data!)
+                    // Delay the next request by a second to not overload the server
+                    self.loadingQueue.asyncAfter(deadline: .now() + 1.0, execute: {
+                        loadingRequest.finishLoading()
+                    })
+                }
+            }
+        }
+        task.resume()
+        return true // meaning "the delegate (we) will handle the request"
+    }
 }
